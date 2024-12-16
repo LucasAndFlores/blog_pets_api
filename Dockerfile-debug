@@ -1,0 +1,30 @@
+# docker build -f Dockerfile-debug . -t pets_api:debug
+# docker run --name pets_api_debug -p 4000:4000 -p 1323:1323 -d pets_api:debug
+
+FROM golang:alpine AS builder
+
+WORKDIR /server
+
+RUN go install github.com/go-delve/delve/cmd/dlv@latest
+
+COPY go.sum go.mod .
+
+RUN apk add --no-cache git ca-certificates&&\
+    go mod download &&\
+    go mod verify
+
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -o /build/binary/pets_api ./cmd/main.go
+
+FROM alpine:latest
+
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /go/bin/dlv /
+
+COPY --from=builder /build/binary/pets_api /pets_api
+
+EXPOSE 1323 4000
+
+CMD ["/dlv", "--listen=:4000", "--headless=true", "--accept-multiclient", "--api-version=2", "--log", "exec", "/pets_api"]
